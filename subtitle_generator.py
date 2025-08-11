@@ -18,14 +18,8 @@ smoothie = SmoothingFunction().method4
 # Load in captions and images separately
 images = "Flickr8k/Images"
 captions = "captions.txt"
-
-
-# Load all captions at once. Load images one by one another time 
-# with __getitem__()
-
-
-#THESE COULD BE WRONG FIX THEM IF NEEDED
 tester = "Flickr8k/Images/667626_18933d713e.jpg"
+
 tester_img = Image.open(tester)
 tokenizer = AutoTokenizer.from_pretrained("t5-base")
 
@@ -96,6 +90,7 @@ dataset = Flickr8kDataset(
     images_path="Flickr8k/Images",
     transform=transform
 )
+
 train_size = int(0.8 * len(dataset))
 test_size = len(dataset) - train_size
 
@@ -133,7 +128,7 @@ class GRU(nn.Module):
         # Embedding layer to convert token IDs to vectors
         self.embedding = nn.Embedding(vocab_size, hidden_size)
         # GRU to process the sequence of word embeddings
-        self.gru = nn.GRU(vocab_size, hidden_size, num_layers, batch_first=True)
+        self.gru = nn.GRU(hidden_size, hidden_size, num_layers, batch_first=True)
         self.fc = nn.Linear(hidden_size, vocab_size)
 
     def forward(self, x, hidden):
@@ -175,8 +170,8 @@ n_total_steps = len(train_loader)
 for epoch in range(num_epochs):
     for i, (image, input, attention_mask) in enumerate(train_loader):
         images = image.to(device)
-        input_id = input.squeeze(1).to(device)
-        mask = attention_mask.squeeze(1).to(device)
+        input_id = input.to(device)
+        mask = attention_mask.to(device)
 
         # Forward pass
         cnn_output = cnn_model(images)
@@ -185,7 +180,7 @@ for epoch in range(num_epochs):
         
         # Shifting the input ids
         targets = input_id[:, 1:]  # target is the next word
-        outputs = outputs[:, :-1, :]  # align with shifted
+        outputs = rnn_output[:, :-1, :]  # align with shifted
 
         # Backward and optimization
         loss = criterion(rnn_output.reshape(-1, vocab_size), targets.reshape(-1))
@@ -207,11 +202,10 @@ with torch.no_grad():
         attention_mask = attention_mask.to(device)
         
         cnn_output = cnn_model(images)
-
         generated_ids = rnn_model.generate(cnn_output)  
 
-        predict = tokenizer.batch_decode(input_id, skip_special_tokens=True)
-        target = tokenizer.batch_decode(generated_ids, skip_special_tokens=True)
+        target = tokenizer.batch_decode(input_id, skip_special_tokens=True)
+        predict = tokenizer.batch_decode(generated_ids, skip_special_tokens=True)
 
         for pred_cap, tar_cap in zip(predict, target):
             pred_token = pred_cap.split()
