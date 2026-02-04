@@ -15,6 +15,12 @@ from nltk.translate.bleu_score import sentence_bleu, SmoothingFunction
 
 smoothie = SmoothingFunction().method4
 
+'''
+https://chatgpt.com/c/689982a0-3e70-8330-85d6-0b0349e8fad0
+
+https://myninja.ai/?conv=20250805-233815-hbfuti
+'''
+
 # Load in captions and images separately
 images = "Flickr8k/Images"
 captions = "captions.txt"
@@ -82,12 +88,14 @@ class Flickr8kDataset(Dataset):
 transform = transforms.Compose([
     transforms.ToTensor(),
     transforms.Normalize(mean=(0.485, 0.456, 0.406), 
-                         std=(0.229, 0.224, 0.225))
+                         std=(0.229, 0.224, 0.225)),
+    transforms.Resize((244, 244))
 ])
 
 dataset = Flickr8kDataset(
     captions_file="Flickr8k/captions.txt",
     images_path="Flickr8k/Images",
+    tokenizer=tokenizer,
     transform=transform
 )
 
@@ -102,23 +110,26 @@ test_loader = DataLoader(test, batch_size=64, shuffle=False)
 
 # CNN to extract image features
 class CNNExtractor(nn.Module):
-    def __init__(self):
+    def __init__(self, output_size=256):
         super().__init__()
-        # ResNet19 to extract image features
+        # ResNet18 to extract image features
         resnet = models.resnet18(pretrained=True)
         # Removes the last layer (it is classification)
         modules = list(resnet.children())[:-1]
         self.resnet = nn.Sequential(*modules)
+        # Resnet18 outputs 512, this makes it output 256
+        self.fc = nn.Linear(512, output_size)
 
     def forward(self, x):
         with torch.no_grad():
             features = self.resnet(x)
         # Return the features reshaped as [batch_size, feature_dimension]
-        return features.view(features.size(0), -1)
-        
+        features = features.view(features.size(0), -1)
+        return self.fc(features)
+    
 cnn_model = CNNExtractor().to(device)
-image = images.to(device)
-features = cnn_model(images)
+#image = tester_img.to(device)
+#features = cnn_model(tester_img)
 
 class GRU(nn.Module):
     def __init__(self, vocab_size, hidden_size, num_layers=1):
@@ -133,6 +144,7 @@ class GRU(nn.Module):
 
     def forward(self, x, hidden):
         embedding = self.embedding(x)
+        # THE ERROR HAPPENS AT THE LINE BELOW
         out, hidden = self.gru(embedding, hidden)
         # Pass to a fully connected layer
         out = self.fc(out)
