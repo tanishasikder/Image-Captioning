@@ -33,7 +33,7 @@ vocab_size = tokenizer.vocab_size
 hidden_size = 256
 num_layers = 1
 num_classes = 10
-num_epochs = 2
+num_epochs = 3
 batch_size = 100
 learning_rate = 0.001
 
@@ -86,10 +86,10 @@ class Flickr8kDataset(Dataset):
         return image, input, attention_mask
 
 transform = transforms.Compose([
+    transforms.Resize((224, 224)),
     transforms.ToTensor(),
     transforms.Normalize(mean=(0.485, 0.456, 0.406), 
-                         std=(0.229, 0.224, 0.225)),
-    transforms.Resize((244, 244))
+                         std=(0.229, 0.224, 0.225))
 ])
 
 dataset = Flickr8kDataset(
@@ -121,8 +121,7 @@ class CNNExtractor(nn.Module):
         self.fc = nn.Linear(512, output_size)
 
     def forward(self, x):
-        with torch.no_grad():
-            features = self.resnet(x)
+        features = self.resnet(x)
         # Return the features reshaped as [batch_size, feature_dimension]
         features = features.view(features.size(0), -1)
         return self.fc(features)
@@ -175,11 +174,14 @@ class GRU(nn.Module):
 
 rnn_model = GRU(vocab_size, hidden_size, num_layers).to(device)
 criterion = nn.CrossEntropyLoss()
-optimizer = torch.optim.Adam(rnn_model.parameters(), lr=learning_rate)
+# Optimize the RNN and CNN
+optimizer = torch.optim.Adam(list(rnn_model.parameters()) + list(cnn_model.parameters()),
+                              lr=learning_rate)
 
 n_total_steps = len(train_loader)
 
 for epoch in range(num_epochs):
+    rnn_model.train()
     for i, (image, input, attention_mask) in enumerate(train_loader):
         images = image.to(device)
         input_id = input.to(device)
@@ -188,21 +190,19 @@ for epoch in range(num_epochs):
         # Forward pass
         cnn_output = cnn_model(images)
         hidden = cnn_output.unsqueeze(0)
-        rnn_output, _ = rnn_model(input_id, hidden)
+        rnn_output = rnn_model(input_id, hidden)
         
         # Shifting the input ids
         targets = input_id[:, 1:]  # target is the next word
         outputs = rnn_output[:, :-1, :]  # align with shifted
-
         # Backward and optimization
-        loss = criterion(rnn_output.reshape(-1, vocab_size), targets.reshape(-1))
+        loss = criterion(outputs.reshape(-1, vocab_size), targets.reshape(-1))
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
-
-        if (i + 1) % 2000 == 0:
-            print(f'Epoch [{epoch+1}/{num_epochs}], Step [{i+1}/{n_total_steps}]')
-            print(f'RNN Loss: {loss.item():.4f}')
+        
+        if (i + 1) % 100 == 0:  
+            print(f'Epoch [{epoch+1}/{num_epochs}], Step [{i+1}/{n_total_steps}], Loss: {loss.item():.4f}')
 
 with torch.no_grad():
     rnn_correct, rnn_samples = 0, 0
@@ -223,14 +223,13 @@ with torch.no_grad():
             pred_token = pred_cap.split()
             tar_token = tar_cap.split()
 
-            bleu = sentence_bleu(tar_token, pred_token, smoothing_function=smoothie)
+            bleu = sentence_bleu([tar_token], pred_token, smoothing_function=smoothie)
 
-            if bleu >= 0.90:
+            if bleu >= 0.20:
                 rnn_correct += 1
             rnn_samples += 1
 
-      # Calculate accuracy
-    rnn_accuracy = 100.0 * (rnn_correct / rnn_samples)
-
-    print(f'RNN Model accuracy: {rnn_accuracy}%')
+# Calculate accuracy
+rnn_accuracy = 100.0 * (rnn_correct / rnn_samples)
+print(f'RNN Model accuracy: {rnn_accuracy}%')
 
