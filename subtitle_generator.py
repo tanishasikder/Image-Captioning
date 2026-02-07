@@ -15,12 +15,6 @@ from nltk.translate.bleu_score import sentence_bleu, SmoothingFunction
 
 smoothie = SmoothingFunction().method4
 
-'''
-https://chatgpt.com/c/689982a0-3e70-8330-85d6-0b0349e8fad0
-
-https://myninja.ai/?conv=20250805-233815-hbfuti
-'''
-
 # Load in captions and images separately
 images = "Flickr8k/Images"
 captions = "captions.txt"
@@ -33,7 +27,7 @@ vocab_size = tokenizer.vocab_size
 hidden_size = 256
 num_layers = 1
 num_classes = 10
-num_epochs = 3
+num_epochs = 10
 batch_size = 100
 learning_rate = 0.001
 
@@ -106,7 +100,6 @@ train, test = random_split(dataset, [train_size, test_size])
 
 train_loader = DataLoader(train, batch_size=64, shuffle=True)
 test_loader = DataLoader(test, batch_size=64, shuffle=False)
-
 
 # CNN to extract image features
 class CNNExtractor(nn.Module):
@@ -190,13 +183,17 @@ for epoch in range(num_epochs):
         # Forward pass
         cnn_output = cnn_model(images)
         hidden = cnn_output.unsqueeze(0)
-        rnn_output = rnn_model(input_id, hidden)
         
         # Shifting the input ids
-        targets = input_id[:, 1:]  # target is the next word
-        outputs = rnn_output[:, :-1, :]  # align with shifted
+        inputs = input_id[:, :-1]  # Remove last token (typically EOS or padding)
+        targets = input_id[:, 1:]  # align with shifted
+
+        rnn_output = rnn_model(inputs, hidden)
+
+        # Remove masking tokens when calculating loss
+        mask = mask[:, 1:]
         # Backward and optimization
-        loss = criterion(outputs.reshape(-1, vocab_size), targets.reshape(-1))
+        loss = criterion(rnn_output.reshape(-1, vocab_size), targets.reshape(-1))
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
