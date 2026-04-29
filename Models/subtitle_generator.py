@@ -51,7 +51,8 @@ train, test = random_split(dataset, [train_size, test_size])
 
 train_loader = DataLoader(train, batch_size=64, shuffle=True)
 test_loader = DataLoader(test, batch_size=64, shuffle=False)
- 
+
+# CNN model to extract initial features, RNN to classify correct subtitle
 cnn_model = cnn_class.CNNExtractor().to(device)
 
 rnn_model = gru_class.GRU(vocab_size, hidden_size, num_layers)
