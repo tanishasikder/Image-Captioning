@@ -107,9 +107,10 @@ with torch.no_grad():
         predict = tokenizer.batch_decode(generated_ids, skip_special_tokens=True)
 
         for pred_cap, tar_cap in zip(predict, target):
-            pred_token = pred_cap.split()
-            tar_token = tar_cap.split()
-
+            pred_token = pred_cap.lower().split()
+            tar_token = tar_cap.lower().split()
+            
+            # Placed in the right order and without the list the accuracy goes down
             bleu = sentence_bleu([tar_token], pred_token, smoothing_function=smoothie)
 
             if bleu >= 0.20:
