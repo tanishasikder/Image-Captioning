@@ -25,6 +25,7 @@ class GRU(nn.Module):
         out, hidden = self.gru(embedding, hidden)
         # Pass to a fully connected layer
         out = self.fc(out)
+        print(f'output shape after forward pass: {out.shape}')
         return out
     
     def init_hidden(self, batch_size):
@@ -41,11 +42,12 @@ class GRU(nn.Module):
         for _ in range(max):
             embedding = self.embedding(input_token)
             output, hidden = self.gru(embedding, hidden)
-            logits = self.fc(output.squeeze(1))
+            logits = self.fc(output[:, -1, :])
+
             next_token = torch.argmax(logits, dim=1, keepdim=True)
             generated_ids.append(next_token)
 
             input_token = next_token
-        
+    
         generated_ids = torch.cat(generated_ids, dim=1)
         return generated_ids

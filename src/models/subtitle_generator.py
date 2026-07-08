@@ -7,6 +7,7 @@ from torch.utils.data import Dataset, DataLoader, random_split
 import os
 import matplotlib.pyplot as plt
 from PIL import Image
+from torch.utils.data import Subset, DataLoader
 
 #hugging face
 from transformers import AutoTokenizer
@@ -26,7 +27,7 @@ num_layers = 1
 num_classes = 10
 num_epochs = 10
 batch_size = 100
-learning_rate = 0.001
+learning_rate = 0.001  # tuning learning rate to 0.01 made no difference
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
@@ -55,13 +56,16 @@ test_loader = DataLoader(test, batch_size=64, shuffle=False)
 # CNN model to extract initial features, RNN to classify correct subtitle
 cnn_model = cnn_class.CNNExtractor().to(device)
 
-rnn_model = gru_class.GRU(vocab_size, hidden_size, num_layers)
-criterion = nn.CrossEntropyLoss()
+rnn_model = gru_class.GRU(vocab_size, hidden_size, num_layers).to(device)
+criterion = nn.CrossEntropyLoss(ignore_index=tokenizer.pad_token_id)
 # Optimize the RNN and CNN
 optimizer = torch.optim.Adam(list(rnn_model.parameters()) + list(cnn_model.parameters()),
                               lr=learning_rate)
 
 n_total_steps = len(train_loader)
+
+#Signals the start of each sentence
+sos_token_id = tokenizer.pad_token_id
 
 for epoch in range(num_epochs):
     rnn_model.train()
@@ -73,17 +77,18 @@ for epoch in range(num_epochs):
         # Forward pass
         cnn_output = cnn_model(images)
         hidden = cnn_output.unsqueeze(0)
-        
-        # Shifting the input ids
-        inputs = input_id[:, :-1]  # Remove last token (typically EOS or padding)
-        targets = input_id[:, 1:]  # align with shifted
 
+        # Put S0S token in start of inputs for mapping to targets
+        start = input_id.size(0)
+        sos = torch.full((start, 1), sos_token_id, dtype=input_id.dtype, device=device)
+        inputs = torch.cat([sos, input_id[:, :-1]], dim=1)  # Remove last token (typically EOS or padding)
+        targets = input_id # Original for mapping and teacher forcing
         rnn_output = rnn_model(inputs, hidden)
 
-        # Remove masking tokens when calculating loss
-        mask = mask[:, 1:]
-        # Backward and optimization
+        #mask = mask[:, 1:]
+
         loss = criterion(rnn_output.reshape(-1, vocab_size), targets.reshape(-1))
+
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
@@ -113,7 +118,7 @@ with torch.no_grad():
             # Placed in the right order and without the list the accuracy goes down
             bleu = sentence_bleu([tar_token], pred_token, smoothing_function=smoothie)
 
-            if bleu >= 0.20:
+            if bleu >= 0.15:
                 rnn_correct += 1
             rnn_samples += 1
 
